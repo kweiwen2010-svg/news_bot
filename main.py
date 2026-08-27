@@ -5,7 +5,11 @@ from google import genai
 import edge_tts
 import requests
 import os
-from dotenv import load_dotenv
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass  # 雲端環境若未安裝 dotenv 會自動忽略，直接讀取 GitHub Secrets 變數
 
 # ==========================================
 # 填入你的個人 Key 與 ID
