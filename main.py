@@ -60,7 +60,7 @@ def generate_radio_script(raw_news: str) -> str:
 6. 結尾附上一句簡短溫暖的晨間祝福。
 """
     response = client.models.generate_content(
-        model="gemini-2.5-flash",
+        model="gemini-3.6-flash",
         contents=prompt,
     )
     return response.text.strip()
