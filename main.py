@@ -18,7 +18,7 @@ except ImportError:
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-
+print(f"DEBUG: GEMINI_API_KEY 長度為 -> {len(GEMINI_API_KEY) if GEMINI_API_KEY else 0}")
 # 語音與檔案設定
 VOICE_NAME = "zh-TW-HsiaoChenNeural" # 微軟親切女聲
 OUTPUT_MP3 = "morning_news.mp3"
