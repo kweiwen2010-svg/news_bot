@@ -46,7 +46,7 @@ def generate_radio_script(raw_news: str) -> str:
     
     prompt = f"""
     你是一位專業且親切的新聞晨報主持人。
-請根據以下蒐集到的新聞標題，撰寫一份約 3 到 4 分鐘的「晨間焦點新聞廣播稿」。
+請根據以下蒐集到的新聞標題，撰寫一份約 5 到 10 分鐘的「晨間焦點新聞廣播稿」。
 
 最新新聞來源：
 {raw_news}
@@ -60,7 +60,7 @@ def generate_radio_script(raw_news: str) -> str:
 6. 結尾附上一句簡短溫暖的晨間祝福。
 """
     response = client.models.generate_content(
-        model="gemini-3.6-flash",
+        model="gemini-2.5-flash",
         contents=prompt,
     )
     return response.text.strip()
