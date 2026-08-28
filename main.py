@@ -1,121 +1,124 @@
+import os
 import asyncio
 from datetime import datetime
 import feedparser
-from google import genai
-import edge_tts
 import requests
-import os
-try:
-    from dotenv import load_dotenv
-    load_dotenv()
-except ImportError:
-    pass  # 雲端環境若未安裝 dotenv 會自動忽略，直接讀取 GitHub Secrets 變數
+import edge_tts
+from google import genai
 
 # ==========================================
-# 填入你的個人 Key 與 ID
+# 環境變數與設定區塊
 # ==========================================
-
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+
+# 輸出除錯資訊
 print(f"DEBUG: GEMINI_API_KEY 長度為 -> {len(GEMINI_API_KEY) if GEMINI_API_KEY else 0}")
-# 語音與檔案設定
-VOICE_NAME = "zh-TW-HsiaoChenNeural" # 微軟親切女聲
+
+VOICE_NAME = "zh-TW-HsiaoChenNeural"  # 微軟親切女聲
 OUTPUT_MP3 = "morning_news.mp3"
 
+
 # ==========================================
-# 1. 抓取 RSS 新聞 (Google News 台灣焦點)
+# 1. 抓取最新新聞
 # ==========================================
-def fetch_top_news() -> str:
+def fetch_news() -> str:
+    print("🚀 1/4 正在抓取最新焦點新聞...")
+    # 使用 Google News 台灣焦點 RSS 來源
     rss_url = "https://news.google.com/rss?hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
     feed = feedparser.parse(rss_url)
     
     news_titles = []
-    # 抓取前 25 則最新新聞
+    # 預先抓取前 25 則標題
     for entry in feed.entries[:25]:
         news_titles.append(f"- {entry.title}")
         
+    print(f"DEBUG: 實際抓取到的新聞數量為 -> {len(news_titles)}")
     return "\n".join(news_titles)
+
 
 # ==========================================
 # 2. 呼叫 Gemini 生成口語廣播稿
 # ==========================================
 def generate_radio_script(raw_news: str) -> str:
+    print("🤖 2/4 正在呼叫 Gemini 生成口語廣播稿...")
+    
+    if not GEMINI_API_KEY:
+        raise ValueError("❌ 錯誤：找不到 GEMINI_API_KEY，請確認 GitHub Secrets 設定！")
+        
     client = genai.Client(api_key=GEMINI_API_KEY)
     today_str = datetime.now().strftime("%Y 年 %m 月 %d 日")
     
     prompt = f"""
-    你是一位專業且親切的新聞晨報主持人。
-請根據以下蒐集到的新聞標題，撰寫一份約 5 到 10 分鐘的「晨間焦點新聞廣播稿」。
+你是一位專業且親切的新聞晨報主持人。
+今天是 {today_str}，請根據以下提供的最新新聞標題，撰寫一份約 3 分鐘的晨間新聞廣播稿。
 
-最新新聞來源：
+【廣播稿要求】
+1. 請包含親切的開場白（例如：「大家早安，歡迎收聽今天的晨間新聞廣播...」）與適當的結尾。
+2. 請務必從下方列表中精選至少 8 至 10 則重要焦點新聞，進行口語化、順暢且富含資訊量的播報。
+3. 語氣自然且適合語音合成輸出，避免使用過多的符號、星號、粗體或無關標題層級。
+
+【新聞原始資料】
 {raw_news}
-
-寫作規範：
-1. 涵蓋 5 至 7 則重點大事（梳理政治、財經、國際與社會消費等多元議題）。
-2. 每則新聞講述核心重點即可，避免單一新聞佔用過多篇幅。
-3. 全文必須完全「口語化」，文字流暢自然。
-4. 嚴格禁止出現任何 Markdown 符號（如 **、#）、條列式標號與劇本標記。
-5. 段落間使用口語連接詞順暢過渡。
-6. 結尾附上一句簡短溫暖的晨間祝福。
 """
+
     response = client.models.generate_content(
         model="gemini-2.5-flash",
         contents=prompt,
     )
-    return response.text.strip()
-    
+    return response.text
+
 
 # ==========================================
-# 3. 轉成 MP3 語音檔
+# 3. 使用 edge-tts 合成語音檔
 # ==========================================
-async def generate_audio(text: str, output_file: str):
+async def generate_audio(text: str):
+    print("🎙️ 3/4 正在合成語音檔...")
     communicate = edge_tts.Communicate(text, VOICE_NAME)
-    await communicate.save(output_file)
+    await communicate.save(OUTPUT_MP3)
+
 
 # ==========================================
-# 4. 發送到 Telegram 聊天室
+# 4. 發送語音訊息至 Telegram (使用 sendVoice 防止連播)
 # ==========================================
-def send_to_telegram(audio_file_path: str):
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendAudio"
-    today_str = datetime.now().strftime("%Y-%m-%d")
-    caption = f"🎧 您的每日全球焦點晨報 ({today_str})"
+def send_to_telegram():
+    print("📲 4/4 正在發送語音訊息至 Telegram...")
     
-    with open(audio_file_path, 'rb') as audio:
-        files = {'audio': audio}
-        data = {
-            'chat_id': TELEGRAM_CHAT_ID,
-            'caption': caption,
-            'title': f"{today_str} 晨間新聞"
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        raise ValueError("❌ 錯誤：找不到 Telegram Bot Token 或 Chat ID！")
+        
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    
+    # 使用 sendVoice 替代 sendAudio
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendVoice"
+    
+    payload = {
+        'chat_id': TELEGRAM_CHAT_ID,
+        'caption': f"🎧 您的每日全球焦點晨報 ({today_str})"
+    }
+    
+    with open(OUTPUT_MP3, 'rb') as audio_file:
+        files = {
+            'voice': audio_file  # Key 改為 'voice'
         }
-        response = requests.post(url, data=data, files=files)
+        response = requests.post(url, data=payload, files=files)
         
     if response.status_code == 200:
-        print("✅ 4/4 Telegram 語音推播成功！請查看手機。")
+        print("✅ 廣播推播發送成功！")
     else:
-        print(f"❌ 推播失敗，錯誤訊息: {response.text}")
+        print(f"❌ 發送失敗！HTTP 狀態碼: {response.status_code}, 回傳內容: {response.text}")
+
 
 # ==========================================
-# 主流程
+# 主程式執行入口
 # ==========================================
 async def main():
-    print("🚀 開始執行新聞廣播測試...")
-    
-    print("📡 1/4 正在抓取最新焦點新聞...")
-    raw_news = fetch_top_news()
-    
-    print("🤖 2/4 正在呼叫 Gemini 生成口語廣播稿...")
+    print("🚀 開始執行新聞廣播流程...")
+    raw_news = fetch_news()
     script = generate_radio_script(raw_news)
-    
-    print("\n" + "="*20 + " 廣播稿內容預覽 " + "="*20)
-    print(script)
-    print("="*52 + "\n")
-    
-    print("🎙️ 3/4 正在合成 MP3 語音檔...")
-    await generate_audio(script, OUTPUT_MP3)
-    
-    print("📤 4/4 正在發送至 Telegram...")
-    send_to_telegram(OUTPUT_MP3)
+    await generate_audio(script)
+    send_to_telegram()
 
 if __name__ == "__main__":
     asyncio.run(main())
