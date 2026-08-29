@@ -117,6 +117,10 @@ async def main():
     print("🚀 開始執行新聞廣播流程...")
     raw_news = fetch_news()
     script = generate_radio_script(raw_news)
+    
+    # 🟢 新增這行：自動將所有星號 (*)、井號 (#) 與 Markdown 符號清除
+    script = re.sub(r'[*#\_~`]', '', script)
+    
     await generate_audio(script)
     send_to_telegram()
 
