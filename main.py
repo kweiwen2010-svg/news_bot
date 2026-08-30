@@ -2,8 +2,8 @@ import os
 import re
 import asyncio
 from datetime import datetime
-from zoneinfo import ZoneInfo  # 取得台灣時區
-from dotenv import load_dotenv  # 本地測試時自動載入 .env
+from zoneinfo import ZoneInfo  # 修正時區
+from dotenv import load_dotenv  # 本地開發自動載入 .env
 import feedparser
 import requests
 import edge_tts
@@ -22,7 +22,6 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-# 輸出除錯資訊
 print(f"DEBUG: GEMINI_API_KEY 長度為 -> {len(GEMINI_API_KEY) if GEMINI_API_KEY else 0}")
 
 VOICE_NAME = "zh-TW-HsiaoChenNeural"  # 微軟親切女聲
@@ -30,45 +29,69 @@ OUTPUT_MP3 = "morning_news.mp3"
 
 
 # ==========================================
-# 1. 抓取最新新聞
+# 0. 抓取嘉義即時氣象 (免 API Key 方案)
+# ==========================================
+def fetch_chiayi_weather() -> str:
+    print("🌤️ 0/4 正在抓取嘉義氣象資訊...")
+    try:
+        # 嘉義市座標：緯度 23.48, 經度 120.45
+        url = "https://api.open-meteo.com/v1/forecast?latitude=23.48&longitude=120.45&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=Asia%2FTaipei"
+        response = requests.get(url, timeout=10)
+        data = response.json()
+        
+        daily = data.get("daily", {})
+        max_temp = daily.get("temperature_2m_max", ["--"])[0]
+        min_temp = daily.get("temperature_2m_min", ["--"])[0]
+        rain_prob = daily.get("precipitation_probability_max", ["--"])[0]
+        
+        return f"嘉義市氣溫預測 {min_temp}~{max_temp}°C，最高降雨機率 {rain_prob}%。"
+    except Exception as e:
+        print(f"⚠️ 氣象抓取失敗，原因：{e}")
+        return "嘉義市天氣資訊暫時無法取得。"
+
+
+# ==========================================
+# 1. 抓取最新國際世界新聞
 # ==========================================
 def fetch_news() -> str:
-    print("🚀 1/4 正在抓取最新焦點新聞...")
-    rss_url = "https://news.google.com/rss?hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
+    print("🚀 1/4 正在抓取最新國際焦點新聞...")
+    # 切換為 Google News 國際/世界新聞 RSS 來源 (WORLD 分類)
+    rss_url = "https://news.google.com/rss/headlines/section/topic/WORLD?hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
     feed = feedparser.parse(rss_url)
     
     news_titles = []
     for entry in feed.entries[:25]:
         news_titles.append(f"- {entry.title}")
         
-    print(f"DEBUG: 實際抓取到的新聞數量為 -> {len(news_titles)}")
+    print(f"DEBUG: 實際抓取到的國際新聞數量為 -> {len(news_titles)}")
     return "\n".join(news_titles)
 
 
 # ==========================================
 # 2. 呼叫 Gemini 生成口語廣播稿
 # ==========================================
-def generate_radio_script(raw_news: str) -> str:
+def generate_radio_script(raw_news: str, weather_info: str) -> str:
     print("🤖 2/4 正在呼叫 Gemini 生成口語廣播稿...")
     
     if not GEMINI_API_KEY:
         raise ValueError("❌ 錯誤：找不到 GEMINI_API_KEY，請確認環境變數或 GitHub Secrets 設定！")
         
     client = genai.Client(api_key=GEMINI_API_KEY)
-    
-    # 修正：強制使用台灣時區取的日期
     today_str = datetime.now(TW_TZ).strftime("%Y 年 %m 月 %d 日")
     
     prompt = f"""
 你是一位專業且親切的新聞晨報主持人。
-今天是 {today_str}，請根據以下提供的最新新聞標題，撰寫一份約 8 分鐘的晨間新聞廣播稿。
+今天是 {today_str}，請根據以下提供的最新國際新聞標題與在地氣象，撰寫一份約 8 分鐘的晨間新聞廣播稿。
+
+【氣象資訊】
+{weather_info}
 
 【廣播稿要求】
-1. 請包含親切的開場白（例如：「大家早安，歡迎收聽今天的晨間新聞廣播...」）與適當的結尾。
-2. 請務必從下方列表中精選至少 8 至 10 則重要焦點新聞，進行口語化、順暢且富含資訊量的播報。
+1. 請包含親切的開場白（例如：「大家早安，歡迎收聽今天的晨間新聞廣播...」），並在開場時順口結合【氣象資訊】給予嘉義在地聽眾貼心的出門穿著或帶傘建議。
+2. 請務必從下方【國際新聞資料】列表中精選至少 8 至 10 則重要全球焦點新聞，進行口語化、順暢且富含資訊量的播報。
 3. 語氣自然且適合語音合成輸出，避免使用過多的符號、星號、粗體或無關標題層級。
 
-【新聞原始資料】
+【國際新聞資料】
 {raw_news}
 """
 
@@ -97,9 +120,7 @@ def send_to_telegram():
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         raise ValueError("❌ 錯誤：找不到 Telegram Bot Token 或 Chat ID！")
         
-    # 修正：強制使用台灣時區取的日期
     today_str = datetime.now(TW_TZ).strftime("%Y-%m-%d")
-    
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendVoice"
     
     payload = {
@@ -117,7 +138,7 @@ def send_to_telegram():
         else:
             print(f"❌ 發送失敗！HTTP 狀態碼: {response.status_code}, 回傳內容: {response.text}")
     finally:
-        # 發送後自動清理暫存 MP3 檔
+        # 傳送後清理暫存檔
         if os.path.exists(OUTPUT_MP3):
             os.remove(OUTPUT_MP3)
 
@@ -127,8 +148,9 @@ def send_to_telegram():
 # ==========================================
 async def main():
     print("🚀 開始執行新聞廣播流程...")
+    weather_info = fetch_chiayi_weather()
     raw_news = fetch_news()
-    script = generate_radio_script(raw_news)
+    script = generate_radio_script(raw_news, weather_info)
     
     # 清除 markdown 標點符號
     script = re.sub(r'[*#\_~`]', '', script)
