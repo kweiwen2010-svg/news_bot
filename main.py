@@ -6,6 +6,7 @@ import feedparser
 from datetime import datetime
 import google.generativeai as genai
 from edge_tts import Communicate
+import subprocess
 
 # 1. 讀取環境變數
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -59,10 +60,9 @@ async def generate_audio(text, output_file="news.mp3"):
 def send_to_telegram(audio_path="news.mp3"):
     today_date = datetime.now().strftime("%m月%d日")
 
-    # 利用 ffmpeg 將 MP3 轉為 Telegram 語音專用 .ogg 格式
-    os.system(f"ffmpeg -y -i {audio_path} -c:a libopus news.ogg")
+    # 🟢 改用 subprocess 執行 ffmpeg 轉檔（確保指令會順利完成）
+    subprocess.run(["ffmpeg", "-y", "-i", audio_path, "-c:a", "libopus", "news.ogg"], check=True)
 
-    # 使用 sendVoice API，確保 Telegram 以語音泡泡呈現且播完即停
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendVoice"
     data = {
         "chat_id": TELEGRAM_CHAT_ID,

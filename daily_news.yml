@@ -1,18 +1,4 @@
-name: 每日晨間新聞廣播自動推播
-
-on:
-  schedule:
-    # 台灣時間每日 6:17 (UTC 22:17，避開整點熱門時段)
-    - cron: '17 20 * * *'
-  
-  # 保留手動觸發功能
-  workflow_dispatch:
-
-jobs:
-  run-daily-news:
-    runs-on: ubuntu-latest
-
-    steps:
+steps:
       - name: 檢出專案程式碼
         uses: actions/checkout@v4
 
@@ -20,6 +6,12 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
+
+      # 🟢 貼在這裡（與 - name 對齊）
+      - name: 安裝 ffmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
 
       - name: 安裝套件
         run: |
