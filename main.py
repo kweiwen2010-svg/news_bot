@@ -6,6 +6,7 @@ import google.generativeai as genai
 from edge_tts import Communicate
 import requests
 from datetime import datetime
+import os  
 
 # 初始化 Gemini API
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
@@ -42,25 +43,18 @@ async def generate_audio(text, output_file="news.mp3"):
     await communicate.save(output_file)
 
 def send_to_telegram(script_text, audio_path="news.mp3"):
-    """推播音訊至 Telegram（加入日期標題、演出者與文字摘要）"""
-    bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
-    chat_id = os.getenv("TELEGRAM_CHAT_ID")
-    
-    # 取得今天日期（例如：08月30日）
-    today_date = datetime.now().strftime("%m月%d日")
-    
-    url = f"https://api.telegram.org/bot{bot_token}/sendAudio"
-    
-    # 🟢 補齊廣播卡片標題、播報員與下方文字摘要
+    # 🟢 把轉檔與 sendVoice 程式碼放在這個函式內部！
+    os.system(f"ffmpeg -y -i {audio_path} -c:a libopus news.ogg")
+
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendVoice"
     data = {
         "chat_id": chat_id,
-        "title": f"晨間新聞廣播 ({today_date})",
-        "performer": "AI 資訊鬧鐘",
-        "caption": f"🎙️ **【{today_date} 晨間新聞廣播】**\n🎧 點擊上方播放鍵收聽完整語音報告" # 隨附文字摘要（前 800 字）
+        "caption": f"🎙️ **【{today_date} 晨間新聞廣播】**",
+        "parse_mode": "Markdown"
     }
-    
-    with open(audio_path, "rb") as audio:
-        requests.post(url, data=data, files={"audio": audio})
+
+    with open("news.ogg", "rb") as voice:
+        requests.post(url, data=data, files={"voice": voice})
 
 async def main():
     print("🚀 開始執行新聞廣播流程...")
