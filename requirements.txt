@@ -1,4 +1,5 @@
-google-generativeai>=0.8.0
-feedparser
+google-genai
 edge-tts
+feedparser
 requests
+python-dotenv

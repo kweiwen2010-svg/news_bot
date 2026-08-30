@@ -1,80 +1,140 @@
 import os
 import re
 import asyncio
-import requests
-import feedparser
 from datetime import datetime
-import google.generativeai as genai
-from edge_tts import Communicate
+from zoneinfo import ZoneInfo  # 取得台灣時區
+from dotenv import load_dotenv  # 本地測試時自動載入 .env
+import feedparser
+import requests
+import edge_tts
+from google import genai
 
-# 1. 讀取環境變數
+# 載入 .env 檔（本地開發使用）
+load_dotenv()
+
+# 設定台灣時區
+TW_TZ = ZoneInfo("Asia/Taipei")
+
+# ==========================================
+# 環境變數與設定區塊
+# ==========================================
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
+# 輸出除錯資訊
+print(f"DEBUG: GEMINI_API_KEY 長度為 -> {len(GEMINI_API_KEY) if GEMINI_API_KEY else 0}")
 
-# 2. 抓取新聞資料
-def fetch_news():
+VOICE_NAME = "zh-TW-HsiaoChenNeural"  # 微軟親切女聲
+OUTPUT_MP3 = "morning_news.mp3"
+
+
+# ==========================================
+# 1. 抓取最新新聞
+# ==========================================
+def fetch_news() -> str:
+    print("🚀 1/4 正在抓取最新焦點新聞...")
     rss_url = "https://news.google.com/rss?hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
     feed = feedparser.parse(rss_url)
-    articles = [f"- {entry.title}" for entry in feed.entries[:5]]
-    return "\n".join(articles)
+    
+    news_titles = []
+    for entry in feed.entries[:25]:
+        news_titles.append(f"- {entry.title}")
+        
+    print(f"DEBUG: 實際抓取到的新聞數量為 -> {len(news_titles)}")
+    return "\n".join(news_titles)
 
-# 3. 利用 Gemini 生成廣播稿並進行文字過濾
-def generate_radio_script(raw_news):
-    model = genai.GenerativeModel('gemini-1.5-flash-latest')
+
+# ==========================================
+# 2. 呼叫 Gemini 生成口語廣播稿
+# ==========================================
+def generate_radio_script(raw_news: str) -> str:
+    print("🤖 2/4 正在呼叫 Gemini 生成口語廣播稿...")
+    
+    if not GEMINI_API_KEY:
+        raise ValueError("❌ 錯誤：找不到 GEMINI_API_KEY，請確認環境變數或 GitHub Secrets 設定！")
+        
+    client = genai.Client(api_key=GEMINI_API_KEY)
+    
+    # 修正：強制使用台灣時區取的日期
+    today_str = datetime.now(TW_TZ).strftime("%Y 年 %m 月 %d 日")
+    
     prompt = f"""
-你是一位親切活潑的晨間廣播主播。請將以下新聞整理成約 300 字的晨間廣播逐字稿。
+你是一位專業且親切的新聞晨報主持人。
+今天是 {today_str}，請根據以下提供的最新新聞標題，撰寫一份約 8 分鐘的晨間新聞廣播稿。
 
-要求：
-1. 口語化且自然流暢，適合播報。
-2. 請直接輸出要朗讀的內容，嚴禁包含「主持人：」、「[開場音樂]」、「(配樂)」等非播報文字說明。
-3. 包含晨間問候、生活提醒與重點新聞摘要。
+【廣播稿要求】
+1. 請包含親切的開場白（例如：「大家早安，歡迎收聽今天的晨間新聞廣播...」）與適當的結尾。
+2. 請務必從下方列表中精選至少 8 至 10 則重要焦點新聞，進行口語化、順暢且富含資訊量的播報。
+3. 語氣自然且適合語音合成輸出，避免使用過多的符號、星號、粗體或無關標題層級。
 
-新聞資料：
+【新聞原始資料】
 {raw_news}
 """
-    response = model.generate_content(prompt)
-    script = response.text
 
-    # 過濾雜音標註與格式符號
-    script = re.sub(r'[\(\[\（\【].*?[\)\]\）\】]', '', script)
-    script = re.sub(r'主持人[：:]\s*', '', script)
-    script = re.sub(r'[*#]', '', script)
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=prompt,
+    )
+    return response.text
+
+
+# ==========================================
+# 3. 使用 edge-tts 合成語音檔
+# ==========================================
+async def generate_audio(text: str):
+    print("🎙️ 3/4 正在合成語音檔...")
+    communicate = edge_tts.Communicate(text, VOICE_NAME)
+    await communicate.save(OUTPUT_MP3)
+
+
+# ==========================================
+# 4. 發送語音訊息至 Telegram
+# ==========================================
+def send_to_telegram():
+    print("📲 4/4 正在發送語音訊息至 Telegram...")
     
-    return script.strip()
-
-# 4. 使用 Edge-TTS 生成 MP3
-async def generate_audio(text, output_file="news.mp3"):
-    communicate = Communicate(text, "zh-TW-HsiaoChenNeural")
-    await communicate.save(output_file)
-
-# 5. 直接發送 MP3 到 Telegram (無需轉檔工具)
-def send_to_telegram(audio_path="news.mp3"):
-    today_date = datetime.now().strftime("%m月%d日")
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendAudio"
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        raise ValueError("❌ 錯誤：找不到 Telegram Bot Token 或 Chat ID！")
+        
+    # 修正：強制使用台灣時區取的日期
+    today_str = datetime.now(TW_TZ).strftime("%Y-%m-%d")
     
-    data = {
-        "chat_id": TELEGRAM_CHAT_ID,
-        "caption": f"🎙️ **【{today_date} 晨間新聞廣播】**",
-        "parse_mode": "Markdown",
-        "title": f"晨間新聞廣播 ({today_date})",
-        "performer": "AI 資訊鬧鐘"
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendVoice"
+    
+    payload = {
+        'chat_id': TELEGRAM_CHAT_ID,
+        'caption': f"🎧 您的每日全球焦點晨報 ({today_str})"
     }
+    
+    try:
+        with open(OUTPUT_MP3, 'rb') as audio_file:
+            files = {'voice': audio_file}
+            response = requests.post(url, data=payload, files=files, timeout=30)
+            
+        if response.status_code == 200:
+            print("✅ 廣播推播發送成功！")
+        else:
+            print(f"❌ 發送失敗！HTTP 狀態碼: {response.status_code}, 回傳內容: {response.text}")
+    finally:
+        # 發送後自動清理暫存 MP3 檔
+        if os.path.exists(OUTPUT_MP3):
+            os.remove(OUTPUT_MP3)
 
-    with open(audio_path, "rb") as audio:
-        requests.post(url, data=data, files={"audio": audio})
 
-# 6. 主流程控制
+# ==========================================
+# 主程式執行入口
+# ==========================================
 async def main():
     print("🚀 開始執行新聞廣播流程...")
     raw_news = fetch_news()
     script = generate_radio_script(raw_news)
+    
+    # 清除 markdown 標點符號
+    script = re.sub(r'[*#\_~`]', '', script)
+    
     await generate_audio(script)
-    send_to_telegram("news.mp3")
-    print("✅ 晨間新聞廣播推播完成！")
+    send_to_telegram()
 
 if __name__ == "__main__":
     asyncio.run(main())
