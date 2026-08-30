@@ -8,7 +8,7 @@ import requests
 
 # 初始化 Gemini API
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-model = genai.GenerativeModel("gemini-1.5-flash")
+model = genai.GenerativeModel("gemini-2.5-flash")
 
 def fetch_news():
     """抓取 RSS 新聞摘要"""
