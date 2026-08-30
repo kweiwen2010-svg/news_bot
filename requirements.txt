@@ -1,5 +1,4 @@
-google-genai
-edge-tts
+google-generativeai
 feedparser
+edge-tts
 requests
-python-dotenv
