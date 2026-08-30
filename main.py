@@ -1,54 +1,71 @@
 import os
 import re
 import asyncio
+import requests
 import feedparser
+from datetime import datetime
 import google.generativeai as genai
 from edge_tts import Communicate
-import requests
-from datetime import datetime
-import os  
 
-# 初始化 Gemini API
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-model = genai.GenerativeModel("gemini-2.5-flash")
+# 1. 讀取環境變數
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
+# 設定 Gemini API Key
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
+
+# 2. 抓取新聞資料
 def fetch_news():
-    """抓取 RSS 新聞摘要"""
+    # 範例以 Google News RSS 為例，可自由更換 RSS 來源
     rss_url = "https://news.google.com/rss?hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
     feed = feedparser.parse(rss_url)
-    
-    news_items = []
-    for entry in feed.entries[:5]:
-        news_items.append(f"標題：{entry.title}\n摘要：{entry.summary}")
-    
-    return "\n\n".join(news_items)
+    articles = []
+    for entry in feed.entries[:5]:  # 抓取前 5 則焦點新聞
+        articles.append(f"- {entry.title}")
+    return "\n".join(articles)
 
+# 3. 利用 Gemini 生成廣播稿並進行文字過濾
 def generate_radio_script(raw_news):
-    """將新聞文字整理為廣播稿"""
+    model = genai.GenerativeModel('gemini-1.5-flash')
     prompt = f"""
-請將以下新聞整理成一份自然的晨間廣播新聞稿：
-{raw_news}
+你是一位親切活潑的晨間廣播主播。請將以下新聞整理成約 300 字的晨間廣播逐字稿。
 
-【嚴格格式要求】：
-1. 請直接撰寫要朗讀的口語文案，絕對不要出現「主持人：」、「播音員：」等角色標籤。
-2. 絕對不要包含任何音樂說明、音效標註或括號說明（例如：[開場音樂]、(配樂漸強) 等）。
-3. 語氣自然口語，每則新聞流暢銜接即可。
+要求：
+1. 口語化且自然流暢，適合播報。
+2. 請直接輸出要朗讀的內容，嚴禁包含「主持人：」、「[開場音樂]」、「(配樂)」等非播報文字說明。
+3. 包含晨間問候、生活提醒與重點新聞摘要。
+
+新聞資料：
+{raw_news}
 """
     response = model.generate_content(prompt)
-    return response.text
+    script = response.text
 
+    # 雙重過濾：剔除括號音效標註、主持人標記與 Markdown 符號 (*, #)
+    script = re.sub(r'[\(\[\（\【].*?[\)\]\）\】]', '', script)
+    script = re.sub(r'主持人[：:]\s*', '', script)
+    script = re.sub(r'[*#]', '', script)
+    
+    return script.strip()
+
+# 4. 使用 Edge-TTS 生成原始 MP3 音訊
 async def generate_audio(text, output_file="news.mp3"):
-    """使用 Edge-TTS 生成語音檔"""
     communicate = Communicate(text, "zh-TW-HsiaoChenNeural")
     await communicate.save(output_file)
 
-def send_to_telegram(script_text, audio_path="news.mp3"):
-    # 🟢 把轉檔與 sendVoice 程式碼放在這個函式內部！
+# 5. 轉換為 .ogg 格式並改用 sendVoice API 發送到 Telegram
+def send_to_telegram(audio_path="news.mp3"):
+    today_date = datetime.now().strftime("%m月%d日")
+
+    # 利用 ffmpeg 將 MP3 轉為 Telegram 語音專用 .ogg 格式
     os.system(f"ffmpeg -y -i {audio_path} -c:a libopus news.ogg")
 
+    # 使用 sendVoice API，確保 Telegram 以語音泡泡呈現且播完即停
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendVoice"
     data = {
-        "chat_id": chat_id,
+        "chat_id": TELEGRAM_CHAT_ID,
         "caption": f"🎙️ **【{today_date} 晨間新聞廣播】**",
         "parse_mode": "Markdown"
     }
@@ -56,20 +73,23 @@ def send_to_telegram(script_text, audio_path="news.mp3"):
     with open("news.ogg", "rb") as voice:
         requests.post(url, data=data, files={"voice": voice})
 
+# 6. 主流程控制
 async def main():
     print("🚀 開始執行新聞廣播流程...")
+    
+    # 步驟 1: 抓新聞
     raw_news = fetch_news()
+    
+    # 步驟 2: AI 生成並清理文案
     script = generate_radio_script(raw_news)
     
-    # 🟢 雙重過濾：剔除括號音樂標註、主持人標籤與 Markdown 符號
-    script = re.sub(r'[\(\[\（\【].*?[\)\]\）\】]', '', script)
-    script = re.sub(r'主持人[：:]\s*', '', script)
-    script = re.sub(r'[*#\_~`]', '', script)
-    
+    # 步驟 3: 生成 MP3 語音檔
     await generate_audio(script)
-    # 傳入 script 讓 Telegram 訊息同步帶上文字摘要
-    send_to_telegram(script)
-    print("✅ 廣播推播完成！")
+    
+    # 步驟 4: 轉碼並發送到 Telegram
+    send_to_telegram("news.mp3")
+    
+    print("✅ 晨間新聞廣播推播完成！")
 
 if __name__ == "__main__":
     asyncio.run(main())
