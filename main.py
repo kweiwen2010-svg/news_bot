@@ -56,7 +56,7 @@ def send_to_telegram(script_text, audio_path="news.mp3"):
         "chat_id": chat_id,
         "title": f"晨間新聞廣播 ({today_date})",
         "performer": "AI 資訊鬧鐘",
-        "caption": f"🎙️ **【{today_date} 晨間新聞摘要】**\n\n{script_text[:800]}..." # 隨附文字摘要（前 800 字）
+        "caption": f"🎙️ **【{today_date} 晨間新聞廣播】**\n🎧 點擊上方播放鍵收聽完整語音報告" # 隨附文字摘要（前 800 字）
     }
     
     with open(audio_path, "rb") as audio:
