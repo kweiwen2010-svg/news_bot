@@ -6,6 +6,16 @@ import feedparser
 import requests
 import edge_tts
 from google import genai
+# 在提示詞（Prompt）中加入以下約束語句
+prompt = f"""
+請將以下新聞整理成一份自然的晨間廣播新聞稿：
+{raw_news}
+
+【嚴格格式要求】：
+1. 請直接撰寫要朗讀的口語文案，絕對不要出現「主持人：」、「播音員：」等角色標籤。
+2. 絕對不要包含任何音樂說明、音效標註或括號說明（例如：[開場音樂]、(配樂漸強) 等）。
+3. 語氣自然口語，每則新聞流暢銜接即可。
+"""
 
 # ==========================================
 # 環境變數與設定區塊
@@ -119,7 +129,13 @@ async def main():
     raw_news = fetch_news()
     script = generate_radio_script(raw_news)
     
-    # 🟢 新增這行：自動將所有星號 (*)、井號 (#) 與 Markdown 符號清除
+    # 🟢 1. 刪除所有括號及其裡面的音樂/音效說明 (包含中英文括號 [], (), 【】)
+    script = re.sub(r'[\(\[\（\【].*?[\)\]\）\】]', '', script)
+    
+    # 🟢 2. 刪除所有「主持人：」或「主持人:」字樣
+    script = re.sub(r'主持人[：:]\s*', '', script)
+    
+    # 🟢 3. 刪除所有 Markdown 格式符號 (*, #, _, ~, `)
     script = re.sub(r'[*#\_~`]', '', script)
     
     await generate_audio(script)
