@@ -28,7 +28,7 @@ def fetch_news():
 
 # 3. 利用 Gemini 生成廣播稿並進行文字過濾
 def generate_radio_script(raw_news):
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    model = genai.GenerativeModel('gemini-2.5-flash')
     prompt = f"""
 你是一位親切活潑的晨間廣播主播。請將以下新聞整理成約 300 字的晨間廣播逐字稿。
 
