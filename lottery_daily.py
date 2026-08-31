@@ -12,76 +12,49 @@ TW_TZ = ZoneInfo("Asia/Taipei")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-# ==========================================
-# 抓取台彩最新開獎號碼 (威力彩、大樂透、今彩539)
-# ==========================================
 def fetch_lottery_results() -> str:
-    print("🎰 1/2 正在抓取台灣彩券最新開獎數據...")
+    print("🎰 1/2 正在抓取最新彩券開獎數據...")
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+    
+    url = "https://lotto.auzo.com.tw/"
     try:
-        url = "https://www.taiwanlottery.com.tw/index_new.aspx"
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        }
         resp = requests.get(url, headers=headers, timeout=15)
         resp.encoding = 'utf-8'
         soup = BeautifulSoup(resp.text, 'html.parser')
-
-        results = []
-
-        # 1. 威力彩 (Super Lotto)
-        super_box = soup.find('div', class_='contents_box02')
-        if super_box:
-            title = "🎯 威力彩"
-            draw_period = super_box.find('span', class_='font_black15')
-            period_str = draw_period.text.strip() if draw_period else ""
-            
-            # 開出順序與大小順序號碼
-            balls = [b.text.strip() for b in super_box.find_all('div', class_=re.compile(r'ball_green|ball_yellow'))]
-            if len(balls) >= 6:
-                seq_nums = " ".join(balls[:6])
-                second_num = super_box.find('div', class_='ball_red')
-                second_str = second_num.text.strip() if second_num else "-"
-                results.append(f"{title} ({period_str})\n▸ 第一區：{seq_nums}\n▸ 第二區：[{second_str}]")
-
-        # 2. 大樂透 (Lotto 649)
-        lotto_box = soup.find('div', class_='contents_box04')
-        if lotto_box:
-            title = "🎰 大樂透"
-            draw_period = lotto_box.find('span', class_='font_black15')
-            period_str = draw_period.text.strip() if draw_period else ""
-            
-            balls = [b.text.strip() for b in lotto_box.find_all('div', class_=re.compile(r'ball_green|ball_yellow'))]
-            special_num = lotto_box.find('div', class_='ball_red')
-            special_str = special_num.text.strip() if special_num else "-"
-            if len(balls) >= 6:
-                seq_nums = " ".join(balls[:6])
-                results.append(f"{title} ({period_str})\n▸ 開出號碼：{seq_nums}\n▸ 特別號：[{special_str}]")
-
-        # 3. 今彩539 (Daily 539)
-        d539_box = soup.find('div', class_='contents_box03')
-        if d539_box:
-            title = "🎱 今彩539"
-            draw_period = d539_box.find('span', class_='font_black15')
-            period_str = draw_period.text.strip() if draw_period else ""
-            
-            balls = [b.text.strip() for b in d539_box.find_all('div', class_=re.compile(r'ball_green|ball_yellow'))]
-            if len(balls) >= 5:
-                seq_nums = " ".join(balls[:5])
-                results.append(f"{title} ({period_str})\n▸ 開出號碼：{seq_nums}")
-
-        today_str = datetime.now(TW_TZ).strftime("%Y-%m-%d")
-        header = f"🎫 【台灣彩券今晚最新開獎結果】({today_str})\n" + "─" * 28 + "\n"
-        footer = "\n" + "─" * 28 + "\n祝您幸運中大獎！🎉"
         
-        return header + "\n\n".join(results) + footer if results else "今日無開獎資料或抓取失敗。"
+        today_str = datetime.now(TW_TZ).strftime("%Y-%m-%d")
+        report = [f"🎫 **【台灣彩券最新開獎結果】({today_str})**", "─" * 28]
+
+        # 解析樂透堂最新開獎表格
+        tables = soup.find_all('table')
+        for table in tables:
+            text = table.text
+            if "威力彩" in text and "第一區" in text:
+                nums = re.findall(r'\b\d{2}\b', text)
+                if len(nums) >= 7:
+                    report.append(f"🎯 **威力彩**\n▸ 第一區：{' '.join(nums[:6])}\n▸ 第二區：[{nums[6]}]\n")
+            elif "大樂透" in text and "特別號" in text:
+                nums = re.findall(r'\b\d{2}\b', text)
+                if len(nums) >= 7:
+                    report.append(f"🎰 **大樂透**\n▸ 開出號碼：{' '.join(nums[:6])}\n▸ 特別號：[{nums[6]}]\n")
+            elif "今彩539" in text:
+                nums = re.findall(r'\b\d{2}\b', text)
+                if len(nums) >= 5:
+                    report.append(f"🎱 **今彩539**\n▸ 開出號碼：{' '.join(nums[:5])}\n")
+
+        if len(report) > 2:
+            report.append("─" * 28)
+            report.append("祝您幸運中大獎！🎉")
+            return "\n".join(report)
+
+        return f"🎫 **【台灣彩券開獎通知】({today_str})**\n\n今日號碼預計於今晚 20:30~21:00 開出！"
 
     except Exception as e:
-        print(f"⚠️ 彩券資料抓取失敗：{e}")
-        return "⚠️ 今日彩券開獎號碼暫時無法取得。"
+        print(f"⚠️ 彩券抓取錯誤：{e}")
+        return "⚠️ 彩券數據更新中，請於今晚開獎後再次查看。"
 
-# ==========================================
-# Telegram 發送
-# ==========================================
 def send_telegram_message(text: str):
     print("📲 2/2 發送彩券開獎至 Telegram...")
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
@@ -90,17 +63,15 @@ def send_telegram_message(text: str):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = {
         'chat_id': TELEGRAM_CHAT_ID,
-        'text': text
+        'text': text,
+        'parse_mode': 'Markdown'
     }
-    
     resp = requests.post(url, data=payload, timeout=15)
-    if resp.status_code == 200:
-        print("✅ 夜間彩券開獎推播成功！")
-    else:
-        print(f"❌ 推播失敗，狀態碼：{resp.status_code}")
+    if resp.status_code != 200:
+        payload.pop('parse_mode')
+        requests.post(url, data=payload, timeout=15)
 
 def main():
-    print("🚀 開始執行夜間彩券開獎推播...")
     report = fetch_lottery_results()
     send_telegram_message(report)
 
