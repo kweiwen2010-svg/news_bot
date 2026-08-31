@@ -12,12 +12,12 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Accept": "application/json"
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 }
 
+# 1. 台日韓職棒 (CPBL / NPB / KBO)
 def fetch_asian_baseball() -> str:
-    print("⚾ 正在抓取台日韓職棒 (CPBL/NPB/KBO) 賽況...")
+    print("⚾ 正在抓取台日韓職棒賽況...")
     lines = ["⚾ **台日韓職棒 (CPBL / NPB / KBO) 今日賽事**"]
     try:
         url = "https://tw.sports.yahoo.com/baseball/"
@@ -26,7 +26,6 @@ def fetch_asian_baseball() -> str:
         soup = BeautifulSoup(resp.text, 'html.parser')
         
         game_items = soup.find_all('div', class_=lambda x: x and ('game' in str(x).lower() or 'match' in str(x).lower()))
-        
         extracted = []
         for item in game_items:
             text = " ".join(item.text.split())
@@ -38,68 +37,69 @@ def fetch_asian_baseball() -> str:
                 lines.append(f"▸ {g}")
         else:
             lines.append("▸ 中職/日職/韓職：目前休賽中，或賽事主要於下午/傍晚開打。")
-            
         return "\n".join(lines)
-    except Exception as e:
+    except Exception:
         return "⚾ **台日韓職棒**：賽事數據更新中。"
 
+# 2. NBA 賽事比分
 def fetch_nba_scores() -> str:
     print("🏀 正在抓取 NBA 最新賽果...")
     try:
         url = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard"
-        resp = requests.get(url, headers=HEADERS, timeout=15)
-        if resp.status_code == 200:
-            data = resp.json()
-            events = data.get("events", [])
-            if not events:
-                return "🏀 **NBA 賽事**：目前為休賽期（Offseason），今日無賽事。"
+        resp = requests.get(url, headers=HEADERS, timeout=10)
+        data = resp.json()
+        events = data.get("events", [])
+        if not events:
+            return "🏀 **NBA 賽事**：目前為休賽期（Offseason），無即時賽況。"
 
-            lines = ["🏀 **NBA 今日賽果與即時比分**"]
-            for event in events[:5]:
-                status = event.get("status", {}).get("type", {}).get("shortDetail", "未開打")
-                comp = event.get("competitions", [{}])[0].get("competitors", [])
-                if len(comp) == 2:
-                    home, away = comp[0], comp[1]
-                    lines.append(f"▸ {away.get('team', {}).get('displayName', '')} {away.get('score', '0')} vs {home.get('score', '0')} {home.get('team', {}).get('displayName', '')} [{status}]")
-            return "\n".join(lines)
-        return "🏀 **NBA 賽事**：目前為休賽期，無即時賽況。"
+        lines = ["🏀 **NBA 今日賽果與即時比分**"]
+        for event in events[:5]:
+            status = event.get("status", {}).get("type", {}).get("shortDetail", "未開打")
+            comp = event.get("competitions", [{}])[0].get("competitors", [])
+            if len(comp) == 2:
+                home, away = comp[0], comp[1]
+                lines.append(f"▸ {away.get('team', {}).get('displayName', '')} {away.get('score', '0')} vs {home.get('score', '0')} {home.get('team', {}).get('displayName', '')} [{status}]")
+        return "\n".join(lines)
     except Exception:
         return "🏀 **NBA 賽事**：目前為休賽期，無即時賽況。"
 
+# 3. MLB 賽事比分（使用 MLB 官方 API，極度穩定）
 def fetch_mlb_scores() -> str:
-    print("⚾ 正在抓取 MLB 焦點賽果...")
+    print("⚾ 正在抓取 MLB 官方戰績...")
     try:
-        url = "https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard"
-        resp = requests.get(url, headers=HEADERS, timeout=15)
-        if resp.status_code == 200:
-            data = resp.json()
-            events = data.get("events", [])
-            if not events:
-                return "⚾ **MLB 賽事**：今日無排定賽事。"
+        today_date = datetime.now(TW_TZ).strftime("%Y-%m-%d")
+        url = f"https://statsapi.mlb.com/api/v1/schedule?sportId=1&date={today_date}&hydrate=linescore"
+        resp = requests.get(url, headers=HEADERS, timeout=10)
+        data = resp.json()
+        
+        dates = data.get("dates", [])
+        if not dates or not dates[0].get("games"):
+            return "⚾ **MLB 賽事**：今日無排定賽事。"
 
-            lines = ["⚾ **MLB 美職棒焦點賽果**"]
-            for event in events[:5]:
-                status = event.get("status", {}).get("type", {}).get("shortDetail", "未開打")
-                comp = event.get("competitions", [{}])[0].get("competitors", [])
-                if len(comp) == 2:
-                    home, away = comp[0], comp[1]
-                    lines.append(f"▸ {away.get('team', {}).get('displayName', '')} {away.get('score', '0')} vs {home.get('score', '0')} {home.get('team', {}).get('displayName', '')} [{status}]")
-            return "\n".join(lines)
-        return "⚾ **MLB 賽事**：數據更新中。"
-    except Exception:
+        lines = ["⚾ **MLB 美職棒焦點賽果**"]
+        games = dates[0].get("games", [])
+        for game in games[:6]:
+            status = game.get("status", {}).get("abstractGameState", "未開打")
+            teams = game.get("teams", {})
+            away = teams.get("away", {})
+            home = teams.get("home", {})
+            
+            away_name = away.get("team", {}).get("name", "")
+            away_score = away.get("score", 0)
+            home_name = home.get("team", {}).get("name", "")
+            home_score = home.get("score", 0)
+            
+            lines.append(f"▸ {away_name} {away_score} vs {home_score} {home_name} [{status}]")
+        return "\n".join(lines)
+    except Exception as e:
+        print(f"⚠️ MLB API 錯誤: {e}")
         return "⚾ **MLB 賽事**：數據暫時無法取得。"
 
 def send_telegram_message(text: str):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         raise ValueError("❌ 錯誤：Telegram 設定缺失！")
-        
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {
-        'chat_id': TELEGRAM_CHAT_ID,
-        'text': text,
-        'parse_mode': 'Markdown'
-    }
-    
+    payload = {'chat_id': TELEGRAM_CHAT_ID, 'text': text, 'parse_mode': 'Markdown'}
     resp = requests.post(url, data=payload, timeout=15)
     if resp.status_code != 200:
         payload.pop('parse_mode')
