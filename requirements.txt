@@ -1,5 +1,6 @@
-google-genai
-edge-tts
-feedparser
 requests
+feedparser
+edge-tts
+google-genai
 python-dotenv
+beautifulsoup4
