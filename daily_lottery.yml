@@ -27,36 +27,29 @@ def fetch_lottery_results() -> str:
         today_str = datetime.now(TW_TZ).strftime("%Y-%m-%d")
         report = [f"🎫 **【台灣彩券最新開獎結果】({today_str})**", "─" * 28]
 
-        # 解析樂透堂首頁三大熱門彩券最新期數與號碼
+        # 解析樂透堂最新開獎表格
         tables = soup.find_all('table')
-        
         for table in tables:
             text = table.text
             if "威力彩" in text and "第一區" in text:
                 nums = re.findall(r'\b\d{2}\b', text)
                 if len(nums) >= 7:
-                    zone1 = " ".join(nums[:6])
-                    zone2 = nums[6]
-                    report.append(f"🎯 **威力彩**\n▸ 第一區：{zone1}\n▸ 第二區：[{zone2}]\n")
+                    report.append(f"🎯 **威力彩**\n▸ 第一區：{' '.join(nums[:6])}\n▸ 第二區：[{nums[6]}]\n")
             elif "大樂透" in text and "特別號" in text:
                 nums = re.findall(r'\b\d{2}\b', text)
                 if len(nums) >= 7:
-                    zone1 = " ".join(nums[:6])
-                    special = nums[6]
-                    report.append(f"🎰 **大樂透**\n▸ 開出號碼：{zone1}\n▸ 特別號：[{special}]\n")
+                    report.append(f"🎰 **大樂透**\n▸ 開出號碼：{' '.join(nums[:6])}\n▸ 特別號：[{nums[6]}]\n")
             elif "今彩539" in text:
                 nums = re.findall(r'\b\d{2}\b', text)
                 if len(nums) >= 5:
-                    zone1 = " ".join(nums[:5])
-                    report.append(f"🎱 **今彩539**\n▸ 開出號碼：{zone1}\n")
+                    report.append(f"🎱 **今彩539**\n▸ 開出號碼：{' '.join(nums[:5])}\n")
 
         if len(report) > 2:
             report.append("─" * 28)
             report.append("祝您幸運中大獎！🎉")
             return "\n".join(report)
 
-        # 備用解析邏輯
-        return f"🎫 **【台灣彩券開獎通知】({today_str})**\n\n今日號碼將於今晚 20:30~21:00 開出，屆時將更新最新派彩結果！"
+        return f"🎫 **【台灣彩券開獎通知】({today_str})**\n\n今日號碼預計於今晚 20:30~21:00 開出！"
 
     except Exception as e:
         print(f"⚠️ 彩券抓取錯誤：{e}")
