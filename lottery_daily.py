@@ -27,22 +27,38 @@ def fetch_lottery_results() -> str:
         today_str = datetime.now(TW_TZ).strftime("%Y-%m-%d")
         report = [f"🎫 **【台灣彩券最新開獎結果】({today_str})**", "─" * 28]
 
-        # 解析樂透堂最新開獎表格
+        # 建立去重集合，每種彩券僅擷取最前面最新的一組
+        found_games = set()
+
         tables = soup.find_all('table')
         for table in tables:
             text = table.text
-            if "威力彩" in text and "第一區" in text:
+            
+            # 威力彩
+            if "威力彩" in text and "第一區" in text and "super_lotto" not in found_games:
                 nums = re.findall(r'\b\d{2}\b', text)
                 if len(nums) >= 7:
-                    report.append(f"🎯 **威力彩**\n▸ 第一區：{' '.join(nums[:6])}\n▸ 第二區：[{nums[6]}]\n")
-            elif "大樂透" in text and "特別號" in text:
+                    zone1 = " ".join(nums[:6])
+                    zone2 = nums[6]
+                    report.append(f"🎯 **威力彩**\n▸ 第一區：{zone1}\n▸ 第二區：[{zone2}]\n")
+                    found_games.add("super_lotto")
+
+            # 大樂透
+            elif "大樂透" in text and "特別號" in text and "lotto649" not in found_games:
                 nums = re.findall(r'\b\d{2}\b', text)
                 if len(nums) >= 7:
-                    report.append(f"🎰 **大樂透**\n▸ 開出號碼：{' '.join(nums[:6])}\n▸ 特別號：[{nums[6]}]\n")
-            elif "今彩539" in text:
+                    zone1 = " ".join(nums[:6])
+                    special = nums[6]
+                    report.append(f"🎰 **大樂透**\n▸ 開出號碼：{zone1}\n▸ 特別號：[{special}]\n")
+                    found_games.add("lotto649")
+
+            # 今彩539
+            elif "今彩539" in text and "daily539" not in found_games:
                 nums = re.findall(r'\b\d{2}\b', text)
                 if len(nums) >= 5:
-                    report.append(f"🎱 **今彩539**\n▸ 開出號碼：{' '.join(nums[:5])}\n")
+                    zone1 = " ".join(nums[:5])
+                    report.append(f"🎱 **今彩539**\n▸ 開出號碼：{zone1}\n")
+                    found_games.add("daily539")
 
         if len(report) > 2:
             report.append("─" * 28)
