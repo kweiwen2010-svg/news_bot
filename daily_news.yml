@@ -3,7 +3,7 @@ name: 每日晨間新聞廣播自動推播
 on:
   schedule:
     # 台灣時間每日 6:17 (UTC 22:17，避開整點熱門時段)
-    - cron: '17 22 * * *'
+    - cron: '17 20 * * *'
   
   # 保留手動觸發功能
   workflow_dispatch:
