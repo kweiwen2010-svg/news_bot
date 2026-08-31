@@ -1,5 +1,6 @@
 import os
 import requests
+from bs4 import BeautifulSoup
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
@@ -10,73 +11,96 @@ TW_TZ = ZoneInfo("Asia/Taipei")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-# ==========================================
-# 通用 ESPN API 賽事抓取工具
-# ==========================================
-def fetch_espn_league_scores(sport: str, league_code: str, league_name: str, emoji: str) -> str:
-    print(f"{emoji} 正在抓取 {league_name} 最新賽果...")
-    try:
-        url = f"https://site.api.espn.com/apis/site/v2/sports/{sport}/{league_code}/scoreboard"
-        resp = requests.get(url, timeout=15)
-        data = resp.json()
-        
-        events = data.get("events", [])
-        if not events:
-            return f"{emoji} **{league_name}**：今日無排定賽事或休兵日。"
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+}
 
-        lines = [f"{emoji} **{league_name} 今日焦點賽果**"]
-        for event in events:
-            status = event.get("status", {}).get("type", {}).get("shortDetail", "未開打")
-            competitors = event.get("competitions", [{}])[0].get("competitors", [])
+# ==========================================
+# 1. 台日韓職棒 (CPBL / NPB / KBO) 戰績抓取
+# ==========================================
+def fetch_asian_baseball() -> str:
+    print("⚾ 正在抓取台日韓職棒 (CPBL/NPB/KBO) 賽況...")
+    lines = ["⚾ **台日韓職棒 (CPBL / NPB / KBO) 今日賽事**"]
+    try:
+        url = "https://tw.sports.yahoo.com/baseball/"
+        resp = requests.get(url, headers=HEADERS, timeout=10)
+        resp.encoding = 'utf-8'
+        soup = BeautifulSoup(resp.text, 'html.parser')
+        
+        # 抓取頁面焦點賽事塊
+        game_items = soup.find_all('div', class_=lambda x: x and ('game' in str(x).lower() or 'match' in str(x).lower()))
+        
+        extracted = []
+        for item in game_items:
+            text = " ".join(item.text.split())
+            if any(k in text for k in ["中職", "日職", "韓職", "兄弟", "統一", "樂天", "味全", "富邦", "台鋼", "巨人", "阪神"]):
+                extracted.append(text[:50])
+
+        if extracted:
+            for g in extracted[:5]:
+                lines.append(f"▸ {g}")
+        else:
+            lines.append("▸ 中職/日職/韓職：賽事主要於下午/傍晚開打，目前無即時賽果或休賽中。")
             
-            if len(competitors) == 2:
-                home = competitors[0]
-                away = competitors[1]
-                
-                home_name = home.get("team", {}).get("displayName", "")
-                home_score = home.get("score", "0")
-                away_name = away.get("team", {}).get("displayName", "")
-                away_score = away.get("score", "0")
-                
-                lines.append(f"▸ {away_name} {away_score} vs {home_score} {home_name} [{status}]")
-                
         return "\n".join(lines)
     except Exception as e:
-        print(f"⚠️ {league_name} 數據抓取失敗：{e}")
-        return f"{emoji} **{league_name}**：數據暫時無法取得。"
+        print(f"⚠️ 亞職數據抓取錯誤：{e}")
+        return "⚾ **台日韓職棒**：賽事數據更新中。"
 
 # ==========================================
-# 中華職棒 (CPBL) 抓取邏輯
+# 2. NBA 賽事比分 (ESPN API)
 # ==========================================
-def fetch_cpbl_scores() -> str:
-    print("⚾ 正在抓取 CPBL 中華職棒最新賽果...")
+def fetch_nba_scores() -> str:
+    print("🏀 正在抓取 NBA 最新賽果...")
     try:
-        # 使用國際數據源介接 CPBL 比分
-        url = "https://site.api.espn.com/apis/site/v2/sports/baseball/taiwan.1/scoreboard"
-        resp = requests.get(url, timeout=15)
-        if resp.status_code == 200:
-            data = resp.json()
-            events = data.get("events", [])
-            if events:
-                lines = ["🇹🇼 **CPBL 中華職棒今日賽果**"]
-                for event in events:
-                    status = event.get("status", {}).get("type", {}).get("shortDetail", "未開打")
-                    competitors = event.get("competitions", [{}])[0].get("competitors", [])
-                    if len(competitors) == 2:
-                        home = competitors[0]
-                        away = competitors[1]
-                        lines.append(f"▸ {away.get('team', {}).get('displayName', '')} {away.get('score', '0')} vs {home.get('score', '0')} {home.get('team', {}).get('displayName', '')} [{status}]")
-                return "\n".join(lines)
+        url = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard"
+        resp = requests.get(url, headers=HEADERS, timeout=10)
+        data = resp.json()
+        events = data.get("events", [])
         
-        return "🇹🇼 **CPBL 中華職棒**：今日無排定賽事或休兵日。"
-    except Exception:
-        return "🇹🇼 **CPBL 中華職棒**：賽事資料更新中。"
+        if not events:
+            return "🏀 **NBA 賽事**：今日無排定賽事。"
+
+        lines = ["🏀 **NBA 今日賽果與即時比分**"]
+        for event in events[:5]:
+            status = event.get("status", {}).get("type", {}).get("shortDetail", "未開打")
+            comp = event.get("competitions", [{}])[0].get("competitors", [])
+            if len(comp) == 2:
+                home, away = comp[0], comp[1]
+                lines.append(f"▸ {away.get('team', {}).get('displayName', '')} {away.get('score', '0')} vs {home.get('score', '0')} {home.get('team', {}).get('displayName', '')} [{status}]")
+        return "\n".join(lines)
+    except Exception as e:
+        return "🏀 **NBA 賽事**：數據暫時無法取得。"
 
 # ==========================================
-# Telegram 推播
+# 3. MLB 賽事比分 (ESPN API)
+# ==========================================
+def fetch_mlb_scores() -> str:
+    print("⚾ 正在抓取 MLB 焦點賽果...")
+    try:
+        url = "https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard"
+        resp = requests.get(url, headers=HEADERS, timeout=10)
+        data = resp.json()
+        events = data.get("events", [])
+        
+        if not events:
+            return "⚾ **MLB 賽事**：今日無排定賽事。"
+
+        lines = ["⚾ **MLB 美職棒焦點賽果**"]
+        for event in events[:5]:
+            status = event.get("status", {}).get("type", {}).get("shortDetail", "未開打")
+            comp = event.get("competitions", [{}])[0].get("competitors", [])
+            if len(comp) == 2:
+                home, away = comp[0], comp[1]
+                lines.append(f"▸ {away.get('team', {}).get('displayName', '')} {away.get('score', '0')} vs {home.get('score', '0')} {home.get('team', {}).get('displayName', '')} [{status}]")
+        return "\n".join(lines)
+    except Exception as e:
+        return "⚾ **MLB 賽事**：數據暫時無法取得。"
+
+# ==========================================
+# Telegram 發送
 # ==========================================
 def send_telegram_message(text: str):
-    print("📲 發送五大體育聯賽賽果至 Telegram...")
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         raise ValueError("❌ 錯誤：Telegram 設定缺失！")
         
@@ -93,29 +117,14 @@ def send_telegram_message(text: str):
         requests.post(url, data=payload, timeout=15)
 
 def main():
-    print("🚀 開始執行全球體育戰績推播...")
     today_str = datetime.now(TW_TZ).strftime("%Y-%m-%d")
+    print(f"🚀 開始執行全球體育戰績推播 ({today_str})...")
     
-    # 1. 美籃 & 美棒
-    nba_report = fetch_espn_league_scores("basketball", "nba", "NBA 籃球", "🏀")
-    mlb_report = fetch_espn_league_scores("baseball", "mlb", "MLB 美棒", "⚾")
+    asian = fetch_asian_baseball()
+    nba = fetch_nba_scores()
+    mlb = fetch_mlb_scores()
     
-    # 2. 亞洲三大職棒 (中職、日棒、韓棒)
-    cpbl_report = fetch_cpbl_scores()
-    npb_report = fetch_espn_league_scores("baseball", "jpn.1", "NPB 日棒", "🇯🇵")
-    kbo_report = fetch_espn_league_scores("baseball", "kor.1", "KBO 韓棒", "🇰🇷")
-    
-    full_report = (
-        f"🏆 **【全球熱門體育戰績速報】({today_str})**\n"
-        f"─" * 28 + "\n\n"
-        f"{nba_report}\n\n"
-        f"{mlb_report}\n\n"
-        f"{cpbl_report}\n\n"
-        f"{npb_report}\n\n"
-        f"{kbo_report}\n\n"
-        f"─" * 28
-    )
-    
+    full_report = f"🏆 **【全球重點體育戰績速報】({today_str})**\n\n{asian}\n\n{nba}\n\n{mlb}"
     send_telegram_message(full_report)
 
 if __name__ == "__main__":
