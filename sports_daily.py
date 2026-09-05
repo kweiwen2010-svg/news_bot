@@ -1,7 +1,6 @@
 import os
 import requests
-from bs4 import BeautifulSoup
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
 
@@ -17,12 +16,13 @@ HEADERS = {
 
 # 1. 台日韓職棒 (CPBL / NPB / KBO)
 def fetch_asian_baseball() -> str:
-    print("⚾ 正在抓取台日韓職棒賽況...")
-    lines = ["⚾ **台日韓職棒 (CPBL / NPB / KBO) 今日賽事**"]
+    print("⚾ 正在檢查亞洲職棒昨日賽果...")
+    lines = ["⚾ **台日韓職棒 (CPBL / NPB / KBO) 昨日戰績**"]
     try:
         url = "https://tw.sports.yahoo.com/baseball/"
         resp = requests.get(url, headers=HEADERS, timeout=10)
         resp.encoding = 'utf-8'
+        from bs4 import BeautifulSoup
         soup = BeautifulSoup(resp.text, 'html.parser')
         
         game_items = soup.find_all('div', class_=lambda x: x and ('game' in str(x).lower() or 'match' in str(x).lower()))
@@ -35,65 +35,80 @@ def fetch_asian_baseball() -> str:
         if extracted:
             for g in extracted[:5]:
                 lines.append(f"▸ {g}")
-        else:
-            lines.append("▸ 中職/日職/韓職：目前休賽中，或賽事主要於下午/傍晚開打。")
-        return "\n".join(lines)
+            return "\n".join(lines)
     except Exception:
-        return "⚾ **台日韓職棒**：賽事數據更新中。"
+        pass
+    return ""  # 若無有效完賽或休賽期，回傳空字串以保持版面乾淨
 
-# 2. NBA 賽事比分
+# 2. NBA 賽事昨日完賽結果
 def fetch_nba_scores() -> str:
-    print("🏀 正在抓取 NBA 最新賽果...")
+    print("🏀 正在抓取 NBA 昨日賽果...")
     try:
         url = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard"
         resp = requests.get(url, headers=HEADERS, timeout=10)
         data = resp.json()
         events = data.get("events", [])
         if not events:
-            return "🏀 **NBA 賽事**：目前為休賽期（Offseason），無即時賽況。"
+            return ""
 
-        lines = ["🏀 **NBA 今日賽果與即時比分**"]
-        for event in events[:5]:
-            status = event.get("status", {}).get("type", {}).get("shortDetail", "未開打")
-            comp = event.get("competitions", [{}])[0].get("competitors", [])
-            if len(comp) == 2:
-                home, away = comp[0], comp[1]
-                lines.append(f"▸ {away.get('team', {}).get('displayName', '')} {away.get('score', '0')} vs {home.get('score', '0')} {home.get('team', {}).get('displayName', '')} [{status}]")
-        return "\n".join(lines)
-    except Exception:
-        return "🏀 **NBA 賽事**：目前為休賽期，無即時賽況。"
+        finished_games = []
+        for event in events:
+            status_type = event.get("status", {}).get("type", {}).get("name", "")
+            # 只抓取已完賽 (STATUS_FINAL) 的比賽
+            if status_type == "STATUS_FINAL":
+                status_detail = event.get("status", {}).get("type", {}).get("shortDetail", "已完賽")
+                comp = event.get("competitions", [{}])[0].get("competitors", [])
+                if len(comp) == 2:
+                    home, away = comp[0], comp[1]
+                    finished_games.append(f"▸ {away.get('team', {}).get('displayName', '')} {away.get('score', '0')} : {home.get('score', '0')} {home.get('team', {}).get('displayName', '')} [{status_detail}]")
 
-# 3. MLB 賽事比分（使用 MLB 官方 API，極度穩定）
+        if finished_games:
+            lines = ["🏀 **NBA 昨日完賽焦點**"]
+            lines.extend(finished_games[:5])
+            return "\n".join(lines)
+    except Exception as e:
+        print(f"⚠️ NBA 抓取錯誤: {e}")
+    return ""
+
+# 3. MLB 賽事昨日完賽結果（使用 MLB 官方 API，精準過濾 Final）
 def fetch_mlb_scores() -> str:
-    print("⚾ 正在抓取 MLB 官方戰績...")
+    print("⚾ 正在抓取 MLB 昨日完賽戰績...")
     try:
-        today_date = datetime.now(TW_TZ).strftime("%Y-%m-%d")
-        url = f"https://statsapi.mlb.com/api/v1/schedule?sportId=1&date={today_date}&hydrate=linescore"
+        # 計算「昨天」的日期（因為早上看的是昨天的美國職棒完賽結果）
+        yesterday_date = (datetime.now(TW_TZ) - timedelta(days=1)).strftime("%Y-%m-%d")
+        url = f"https://statsapi.mlb.com/api/v1/schedule?sportId=1&date={yesterday_date}&hydrate=linescore"
         resp = requests.get(url, headers=HEADERS, timeout=10)
         data = resp.json()
         
         dates = data.get("dates", [])
         if not dates or not dates[0].get("games"):
-            return "⚾ **MLB 賽事**：今日無排定賽事。"
+            return ""
 
-        lines = ["⚾ **MLB 美職棒焦點賽果**"]
+        finished_games = []
         games = dates[0].get("games", [])
-        for game in games[:6]:
-            status = game.get("status", {}).get("abstractGameState", "未開打")
-            teams = game.get("teams", {})
-            away = teams.get("away", {})
-            home = teams.get("home", {})
+        for game in games:
+            status = game.get("status", {}).get("abstractGameState", "")
             
-            away_name = away.get("team", {}).get("name", "")
-            away_score = away.get("score", 0)
-            home_name = home.get("team", {}).get("name", "")
-            home_score = home.get("score", 0)
-            
-            lines.append(f"▸ {away_name} {away_score} vs {home_score} {home_name} [{status}]")
-        return "\n".join(lines)
+            # 關鍵過濾：只抓取狀態為 Final（已完賽）的場次，徹底排除 Preview 與 In Progress
+            if status == "Final":
+                teams = game.get("teams", {})
+                away = teams.get("away", {})
+                home = teams.get("home", {})
+                
+                away_name = away.get("team", {}).get("name", "")
+                away_score = away.get("score", 0)
+                home_name = home.get("team", {}).get("name", "")
+                home_score = home.get("score", 0)
+                
+                finished_games.append(f"▸ {away_name} {away_score} vs {home_score} {home_name} [已完賽]")
+
+        if finished_games:
+            lines = [f"⚾ **MLB 美職棒昨日完賽戰績 ({yesterday_date})**"]
+            lines.extend(finished_games[:6])
+            return "\n".join(lines)
     except Exception as e:
         print(f"⚠️ MLB API 錯誤: {e}")
-        return "⚾ **MLB 賽事**：數據暫時無法取得。"
+    return ""
 
 def send_telegram_message(text: str):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
@@ -107,11 +122,28 @@ def send_telegram_message(text: str):
 
 def main():
     today_str = datetime.now(TW_TZ).strftime("%Y-%m-%d")
-    asian = fetch_asian_baseball()
-    nba = fetch_nba_scores()
-    mlb = fetch_mlb_scores()
     
-    full_report = f"🏆 **【全球重點體育戰績速報】({today_str})**\n\n{asian}\n\n{nba}\n\n{mlb}"
+    # 收集各項有效完賽戰報
+    reports = []
+    
+    mlb_report = fetch_mlb_scores()
+    if mlb_report:
+        reports.append(mlb_report)
+        
+    nba_report = fetch_nba_scores()
+    if nba_report:
+        reports.append(nba_report)
+        
+    asian_report = fetch_asian_baseball()
+    if asian_report:
+        reports.append(asian_report)
+        
+    # 如果昨天完全沒有任何已完賽的賽事，則保持靜默或發送休兵通知，避免空包彈
+    if not reports:
+        print("ℹ️ 昨日無完賽賽事，今日略過體育戰報推播。")
+        return
+        
+    full_report = f"🏆 **【全球重點體育昨日完賽速報】({today_str})**\n\n" + "\n\n".join(reports)
     send_telegram_message(full_report)
 
 if __name__ == "__main__":
