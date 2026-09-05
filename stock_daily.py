@@ -145,8 +145,11 @@ def send_telegram_message(text: str):
 def main():
     print("🚀 開始執行盤後股票籌碼與新聞推播...")
     hot_stocks = fetch_twse_hot_stocks()
+    
     if not hot_stocks:
-        print("⚠️ 今日無符合雙法人買超條件之熱門股或逢休市日。")
+        today_str = datetime.now(TW_TZ).strftime("%Y-%m-%d")
+        empty_msg = f"📊 【今日盤後熱門籌碼與新聞焦點】 ({today_str})\n\n⚠️ 今日無符合雙法人（外資+投信）同步買超條件之熱門標的，或逢台股休市日。"
+        send_telegram_message(empty_msg)
         return
         
     report = generate_stock_report(hot_stocks)
