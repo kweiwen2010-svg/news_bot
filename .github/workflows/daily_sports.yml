@@ -3,7 +3,7 @@ name: 每日體育戰績推播
 on:
   schedule:
     # 台灣時間每日 12:30 (UTC 04:30) 賽事結束後推播
-    - cron: '30 4 * * *'
+    - cron: '30 0 * * *'
   
   workflow_dispatch:
 
