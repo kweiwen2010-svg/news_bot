@@ -3,7 +3,7 @@ import asyncio
 import urllib.parse
 import requests
 import feedparser
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
 import edge_tts
@@ -18,7 +18,6 @@ HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/
 def get_weather() -> str:
     """簡單抓取當天台灣主要地區天氣（以台北為例）"""
     try:
-        # 使用公開且免 API Key 的氣象簡易接口
         url = "https://wttr.in/Taipei?format=1&lang=zh-tw"
         resp = requests.get(url, headers=HEADERS, timeout=5)
         if resp.status_code == 200:
@@ -55,9 +54,19 @@ def get_crypto_prices() -> str:
         return "💰 **加密貨幣**：數據暫時無法取得"
 
 def get_market_news() -> str:
-    """抓取前天至近期的財經焦點新聞 (when:2d)"""
+    """抓取前天整天的財經焦點新聞"""
     try:
-        query = urllib.parse.quote("財經 股市 when:2d")
+        now = datetime.now(TW_TZ)
+        # 計算前天的日期
+        day_before_yesterday = now - timedelta(days=2)
+        yesterday = now - timedelta(days=1)
+        
+        dby_str = day_before_yesterday.strftime('%Y-%m-%d')
+        y_str = yesterday.strftime('%Y-%m-%d')
+        
+        # 利用 Google 搜尋語法指定 after 與 before 鎖定前天
+        query_str = f"財經 股市 after:{dby_str} before:{y_str}"
+        query = urllib.parse.quote(query_str)
         rss_url = f"https://news.google.com/rss/search?q={query}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
         
         resp = requests.get(rss_url, headers=HEADERS, timeout=10)
@@ -67,8 +76,8 @@ def get_market_news() -> str:
             for entry in feed.entries[:3]:
                 news_titles.append(f"▸ {entry.title}")
             if news_titles:
-                return "📰 **財經焦點新聞**\n" + "\n".join(news_titles)
-        return "📰 **財經焦點新聞**：暫無即時新聞"
+                return f"📰 **前天 ({dby_str}) 財經焦點新聞**\n" + "\n".join(news_titles)
+        return f"📰 **前天財經焦點新聞**：暫無相關新聞"
     except Exception as e:
         print(f"⚠️ 新聞抓取錯誤: {e}")
         return "📰 **財經焦點新聞**：暫時無法取得"
@@ -105,7 +114,7 @@ def main():
     date_str = now.strftime('%Y-%m-%d')
     today_str = f"{date_str} ({ch_weekday})"
     
-    # 組合文字晨報（含氣象、金價、加密貨幣、近期新聞）
+    # 組合文字晨報（含氣象、金價、加密貨幣、前天新聞）
     report = [
         f"🌅 **【DNA 4.0 每日市場總經速報】**",
         f"📅 日期：{today_str}",
