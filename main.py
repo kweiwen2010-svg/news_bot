@@ -85,18 +85,17 @@ async def generate_edge_tts(text: str, output_path: str):
 
 def main():
     now = datetime.now(TW_TZ)
-    yesterday = now - timedelta(days=1)
     week_map = {"Monday": "週一", "Tuesday": "週二", "Wednesday": "週三", "Thursday": "週四", "Friday": "週五", "Saturday": "週六", "Sunday": "週日"}
     ch_weekday = week_map.get(now.strftime("%A"), now.strftime("%A"))
     date_str = now.strftime('%Y-%m-%d')
     today_str = f"{date_str} ({ch_weekday})"
     
-    # 抓取各類新聞與天氣（嘉義市天氣、台灣新聞、國際新聞，總計約 25-30 則）
+    # 抓取各類新聞與天氣（嘉義市天氣、台灣新聞、國際新聞）
     chiayi_weather_news = fetch_rss_titles("嘉義市 天氣", max_items=8)
     taiwan_news = fetch_rss_titles("台灣 要聞", max_items=11)
     intl_news = fetch_rss_titles("國際 新聞", max_items=11)
 
-    # 組合文字看板報告
+    # 組合 Telegram 文字看板報告
     report_lines = [
         f"🌅 **【DNA 4.0 每日市場與地方速報】**",
         f"📅 日期：{today_str}",
@@ -128,16 +127,17 @@ def main():
     full_report = "\n".join(report_lines)
     send_telegram_message(full_report)
 
-    # 語音廣播內容（精選約 10 則重點進行語音合成播報）
+    # 建構高品質的語音包內容（精選約 10 則重點新聞連貫播報）
     try:
-        print("🔊 正在透過 edge-tts 生成語音播報...")
-        voice_intro = f"您好，今天是 {date_str}。以下為您播報今日重點總經與地方新聞。"
+        print("🔊 正在透過 edge-tts 生成專屬語音廣播包...")
+        voice_intro = f"您好，今天是 {date_str}。歡迎收聽 D.N.A. 四點零每日晨間廣播包。"
         
-        # 從各類別中挑選前幾則組合成大約 10 則的語音播報稿
-        selected_for_voice = chiayi_weather_news[:3] + taiwan_news[:4] + intl_news[:3]
-        voice_body = "。".join(selected_for_voice)
+        # 挑選精華組合成大約 10 則的語音播報稿
+        v_weather = "。".join(chiayi_weather_news[:2]) if chiayi_weather_news else "暫無在地氣象資訊"
+        v_taiwan = "。".join(taiwan_news[:4]) if taiwan_news else ""
+        v_intl = "。".join(intl_news[:4]) if intl_news else ""
         
-        voice_text = f"{voice_intro}。嘉義市天氣與在地重點包含：{'。'.join(chiayi_weather_news[:2])}。台灣要聞有：{'。'.join(taiwan_news[:3])}。國際新聞有：{'。'.join(intl_news[:3])}。祝您操作順利，交易長紅！"
+        voice_text = f"{voice_intro}。首先是嘉義市氣象與在地動態：{v_weather}。接著是台灣要聞：{v_taiwan}。國際焦點新聞：{v_intl}。以上是今天的重點播報，祝您操作順利，交易長紅！"
         
         audio_file = "morning_voice.mp3"
         asyncio.run(generate_edge_tts(voice_text, audio_file))
@@ -145,7 +145,7 @@ def main():
         
         if os.path.exists(audio_file):
             os.remove(audio_file)
-        print("✅ 語音晨報發送成功！")
+        print("✅ 語音廣播包發送成功！")
     except Exception as e:
         print(f"⚠️ 語音生成或發送失敗：{e}")
 
