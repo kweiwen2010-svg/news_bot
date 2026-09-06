@@ -75,7 +75,6 @@ def send_telegram_voice(audio_path: str):
 
 async def generate_edge_tts(text: str, output_path: str):
     """使用 edge-tts 生成高品質語音"""
-    # 預設使用台灣微軟雲端語音 (zh-TW-HsiaoChenNeural 或 zh-TW-YunJheNeural)
     communicate = edge_tts.Communicate(text, "zh-TW-HsiaoChenNeural")
     await communicate.save(output_path)
 
@@ -86,7 +85,7 @@ def main():
     date_str = now.strftime('%Y-%m-%d')
     today_str = f"{date_str} ({ch_weekday})"
     
-    # 1. 組合文字訊息並發送
+    # 1. 組裝文字晨報
     report = [
         f"🌅 **【DNA 4.0 每日市場總經速報】**",
         f"📅 日期：{today_str}",
@@ -99,19 +98,19 @@ def main():
         "─" * 28,
         "💡 **交易提醒**：盤勢瞬息萬變，嚴守紀律、控管風險！🚀"
     ]
+    
     full_report = "\n".join(report)
     send_telegram_message(full_report)
 
-    # 2. 生成並發送 edge-tts 語音檔
+    # 2. 生成並發送語音播報
     try:
         print("🔊 正在透過 edge-tts 生成高品質語音...")
-        voice_text = f"您好，今天是 {date_str}，您的 DNA 四點零，每日市場總經速報已送達。祝您操作順利，交易長紅！"
+        voice_text = f"您好，今天是 {date_str}，您的 D.N.A. 四點零，每日市場總經速報已送達。祝您操作順利，交易長紅！"
         audio_file = "morning_voice.mp3"
         
-        # 執行非同步語音生成
         asyncio.run(generate_edge_tts(voice_text, audio_file))
-        
         send_telegram_voice(audio_file)
+        
         if os.path.exists(audio_file):
             os.remove(audio_file)
         print("✅ 語音晨報發送成功！")
