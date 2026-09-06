@@ -1,5 +1,6 @@
 import os
 import asyncio
+import urllib.parse
 import requests
 import feedparser
 from datetime import datetime
@@ -42,15 +43,22 @@ def get_crypto_prices() -> str:
         return "💰 **加密貨幣**：數據暫時無法取得"
 
 def get_market_news() -> str:
-    """抓取財經焦點新聞"""
+    """抓取財經焦點新聞（已加入 URL 編碼防呆）"""
     try:
-        rss_url = "https://news.google.com/rss/search?q=財經 股市 國際金價&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
-        feed = feedparser.parse(rss_url)
-        news_titles = []
-        for entry in feed.entries[:3]:
-            news_titles.append(f"▸ {entry.title}")
-        return "📰 **財經焦點新聞**\n" + ("\n".join(news_titles) if news_titles else "暫無即時新聞")
-    except Exception:
+        query = urllib.parse.quote("財經 股市")
+        rss_url = f"https://news.google.com/rss/search?q={query}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
+        
+        resp = requests.get(rss_url, headers=HEADERS, timeout=10)
+        if resp.status_code == 200:
+            feed = feedparser.parse(resp.text)
+            news_titles = []
+            for entry in feed.entries[:3]:  # 取前 3 則
+                news_titles.append(f"▸ {entry.title}")
+            if news_titles:
+                return "📰 **財經焦點新聞**\n" + "\n".join(news_titles)
+        return "📰 **財經焦點新聞**：暫無即時新聞"
+    except Exception as e:
+        print(f"⚠️ 新聞抓取錯誤: {e}")
         return "📰 **財經焦點新聞**：暫時無法取得"
 
 def send_telegram_message(text: str):
@@ -74,7 +82,7 @@ def send_telegram_voice(audio_path: str):
         requests.post(url, data=data, files=files, timeout=30)
 
 async def generate_edge_tts(text: str, output_path: str):
-    """使用 edge-tts 生成高品質語音"""
+    """使用 edge-tts 生成高品質微軟語音"""
     communicate = edge_tts.Communicate(text, "zh-TW-HsiaoChenNeural")
     await communicate.save(output_path)
 
@@ -85,7 +93,7 @@ def main():
     date_str = now.strftime('%Y-%m-%d')
     today_str = f"{date_str} ({ch_weekday})"
     
-    # 1. 組裝文字晨報
+    # 1. 組合文字晨報
     report = [
         f"🌅 **【DNA 4.0 每日市場總經速報】**",
         f"📅 日期：{today_str}",
@@ -102,7 +110,7 @@ def main():
     full_report = "\n".join(report)
     send_telegram_message(full_report)
 
-    # 2. 生成並發送語音播報
+    # 2. 生成並發送 edge-tts 語音播報
     try:
         print("🔊 正在透過 edge-tts 生成高品質語音...")
         voice_text = f"您好，今天是 {date_str}，您的 D.N.A. 四點零，每日市場總經速報已送達。祝您操作順利，交易長紅！"
