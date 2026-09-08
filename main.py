@@ -32,7 +32,7 @@ def get_weather() -> str:
     """簡單抓取當天台灣主要地區天氣（以台北為例）"""
     try:
         url = "https://wttr.in/Taipei?format=1&lang=zh-tw"
-        resp = requests.get(url, headers=HEADERS, timeout=5)
+        resp = requests.get(url, headers=HEADERS, timeout=10)
         if resp.status_code == 200:
             return f"🌤️ **當天氣象預報**\n▸ 台北地區: {resp.text.strip()}"
     except Exception:
@@ -68,29 +68,32 @@ def get_crypto_prices() -> str:
 
 def fetch_news() -> str:
     print("🚀 正在抓取最新焦點新聞...")
-    rss_url = "https://news.google.com/rss?hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
-    resp = requests.get(rss_url, headers=HEADERS, timeout=10)
-    
-    news_titles = []
-    exclude_keywords = ["2026年5月", "2026年6月", "2026年7月", "2026年8月"]
-    
-    if resp.status_code == 200:
-        feed = feedparser.parse(resp.text)
-        # 將原本抓取的總量與採用量提升，讓新聞更豐富
-        for entry in feed.entries[:40]:
-            title = entry.title
-            if any(k in title for k in exclude_keywords):
-                continue
-            news_titles.append(f"- {title}")
-            if len(news_titles) >= 25:
-                break
-                
-    print(f"DEBUG: 過濾後實際採用新聞數量為 -> {len(news_titles)}")
-    return "\n".join(news_titles)
+    try:
+        rss_url = "https://news.google.com/rss?hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
+        resp = requests.get(rss_url, headers=HEADERS, timeout=15)
+        
+        news_titles = []
+        exclude_keywords = ["2026年5月", "2026年6月", "2026年7月", "2026年8月"]
+        
+        if resp.status_code == 200:
+            feed = feedparser.parse(resp.text)
+            for entry in feed.entries[:40]:
+                title = entry.title
+                if any(k in title for k in exclude_keywords):
+                    continue
+                news_titles.append(f"- {title}")
+                if len(news_titles) >= 25:
+                    break
+                    
+        print(f"DEBUG: 過濾後實際採用新聞數量為 -> {len(news_titles)}")
+        return "\n".join(news_titles)
+    except Exception as e:
+        print(f"⚠️ 新聞抓取發生例外: {e}")
+        return "- 暫時無法取得即時新聞"
 
 
 # ==========================================
-# 2. 呼叫 Gemini 生成口語廣播稿 (增加新聞則數)
+# 2. 呼叫 Gemini 生成口語廣播稿
 # ==========================================
 def generate_radio_script(raw_news: str) -> str:
     print("🤖 正在呼叫 Gemini 生成口語廣播稿...")
@@ -108,7 +111,7 @@ def generate_radio_script(raw_news: str) -> str:
 【極重要格式與數量要求】
 1. 絕對不要使用任何星號 (*)、井字號 (#)、粗體語法或 Markdown 符號。因為這段文字會直接轉成語音，任何符號被唸出來都會破壞體驗。
 2. 請直接以口語化、順暢的純文字敘述，包含簡單的開場與結尾。
-3. **請從下方列表中精選 12 至 15 則重要焦點新聞進行播報**，讓內容更豐富充實。
+3. 請從下方列表中精選 12 至 15 則重要焦點新聞進行播報，讓內容更豐富充實。
 
 【新聞原始資料】
 {raw_news}
@@ -131,7 +134,7 @@ async def generate_audio(text: str):
 
 
 # ==========================================
-# 4. 發送 Telegram 文字看板與語音訊息
+# 4. 發送 Telegram 文字看板與語音訊息（具備防斷線保護）
 # ==========================================
 def send_telegram_notifications(script_text: str):
     print("📲 正在發送 Telegram 推播...")
@@ -162,26 +165,34 @@ def send_telegram_notifications(script_text: str):
     
     msg_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = {'chat_id': TELEGRAM_CHAT_ID, 'text': full_report, 'parse_mode': 'Markdown'}
-    resp = requests.post(msg_url, data=payload, timeout=15)
-    if resp.status_code != 200:
-        payload.pop('parse_mode')
-        requests.post(msg_url, data=payload, timeout=15)
+    
+    try:
+        resp = requests.post(msg_url, data=payload, timeout=30)
+        if resp.status_code != 200:
+            payload.pop('parse_mode', None)
+            requests.post(msg_url, data=payload, timeout=30)
+        print("✅ 文字看板發送成功！")
+    except Exception as e:
+        print(f"⚠️ 發送文字看板發生例外（已忽略以防中斷流程）: {e}")
 
-    # B. 發送語音訊息
+    # B. 發送語音訊息（Timeout 提高至 60 秒）
     voice_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendVoice"
     voice_payload = {
         'chat_id': TELEGRAM_CHAT_ID,
         'caption': f"🎧 您的每日全球焦點晨報語音 ({today_str})"
     }
     
-    with open(OUTPUT_MP3, 'rb') as audio_file:
-        files = {'voice': audio_file}
-        voice_resp = requests.post(voice_url, data=voice_payload, files=files, timeout=60)
-        
-    if voice_resp.status_code == 200:
-        print("✅ 文字看板與語音廣播推播發送成功！")
-    else:
-        print(f"❌ 語音發送失敗！狀態碼: {voice_resp.status_code}, 內容: {voice_resp.text}")
+    try:
+        with open(OUTPUT_MP3, 'rb') as audio_file:
+            files = {'voice': audio_file}
+            voice_resp = requests.post(voice_url, data=voice_payload, files=files, timeout=60)
+            
+        if voice_resp.status_code == 200:
+            print("✅ 語音廣播推播發送成功！")
+        else:
+            print(f"❌ 語音發送失敗！狀態碼: {voice_resp.status_code}, 內容: {voice_resp.text}")
+    except Exception as e:
+        print(f"⚠️ 發送語音發生例外（已忽略以防中斷流程）: {e}")
 
 
 # ==========================================
