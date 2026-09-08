@@ -1,6 +1,5 @@
 import os
 import asyncio
-import urllib.parse
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import feedparser
@@ -77,13 +76,13 @@ def fetch_news() -> str:
     
     if resp.status_code == 200:
         feed = feedparser.parse(resp.text)
-        for entry in feed.entries[:30]:
+        # 將原本抓取的總量與採用量提升，讓新聞更豐富
+        for entry in feed.entries[:40]:
             title = entry.title
-            # 過濾遠期舊資料與彙編
             if any(k in title for k in exclude_keywords):
                 continue
             news_titles.append(f"- {title}")
-            if len(news_titles) >= 15:
+            if len(news_titles) >= 25:
                 break
                 
     print(f"DEBUG: 過濾後實際採用新聞數量為 -> {len(news_titles)}")
@@ -91,7 +90,7 @@ def fetch_news() -> str:
 
 
 # ==========================================
-# 2. 呼叫 Gemini 生成口語廣播稿 (已去除星號與冗長符號)
+# 2. 呼叫 Gemini 生成口語廣播稿 (增加新聞則數)
 # ==========================================
 def generate_radio_script(raw_news: str) -> str:
     print("🤖 正在呼叫 Gemini 生成口語廣播稿...")
@@ -104,12 +103,12 @@ def generate_radio_script(raw_news: str) -> str:
     
     prompt = f"""
 你是一位專業且親切的新聞播報員。
-今天是 {today_str}，請根據以下提供的最新新聞標題，撰寫一份簡短流暢的晨間新聞廣播稿。
+今天是 {today_str}，請根據以下提供的最新新聞標題，撰寫一份內容豐富、結構流暢的晨間新聞廣播稿。
 
-【極重要格式要求】
+【極重要格式與數量要求】
 1. 絕對不要使用任何星號 (*)、井字號 (#)、粗體語法或 Markdown 符號。因為這段文字會直接轉成語音，任何符號被唸出來都會破壞體驗。
 2. 請直接以口語化、順暢的純文字敘述，包含簡單的開場與結尾。
-3. 從下方列表中精選 10 至 20 則重要焦點新聞進行播報，大約10分鐘的新聞播報。
+3. **請從下方列表中精選 12 至 15 則重要焦點新聞進行播報**，讓內容更豐富充實。
 
 【新聞原始資料】
 {raw_news}
@@ -177,7 +176,7 @@ def send_telegram_notifications(script_text: str):
     
     with open(OUTPUT_MP3, 'rb') as audio_file:
         files = {'voice': audio_file}
-        voice_resp = requests.post(voice_url, data=voice_payload, files=files, timeout=30)
+        voice_resp = requests.post(voice_url, data=voice_payload, files=files, timeout=60)
         
     if voice_resp.status_code == 200:
         print("✅ 文字看板與語音廣播推播發送成功！")
