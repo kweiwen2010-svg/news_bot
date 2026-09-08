@@ -1,4 +1,5 @@
 import os
+import time
 import asyncio
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -134,7 +135,7 @@ async def generate_audio(text: str):
 
 
 # ==========================================
-# 4. 發送 Telegram 文字看板與語音訊息（具備防斷線保護）
+# 4. 發送 Telegram 文字看板與語音訊息（加入緩衝防洗版機制）
 # ==========================================
 def send_telegram_notifications(script_text: str):
     print("📲 正在發送 Telegram 推播...")
@@ -173,9 +174,13 @@ def send_telegram_notifications(script_text: str):
             requests.post(msg_url, data=payload, timeout=30)
         print("✅ 文字看板發送成功！")
     except Exception as e:
-        print(f"⚠️ 發送文字看板發生例外（已忽略以防中斷流程）: {e}")
+        print(f"⚠️ 發送文字看板發生例外: {e}")
 
-    # B. 發送語音訊息（Timeout 提高至 60 秒）
+    # 🛑 關鍵緩衝：等待 5 秒，避免觸發 Telegram 頻率限制 (Too Many Requests)
+    print("⏳ 等待 5 秒後發送語音檔...")
+    time.sleep(5)
+
+    # B. 發送語音訊息
     voice_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendVoice"
     voice_payload = {
         'chat_id': TELEGRAM_CHAT_ID,
@@ -192,7 +197,7 @@ def send_telegram_notifications(script_text: str):
         else:
             print(f"❌ 語音發送失敗！狀態碼: {voice_resp.status_code}, 內容: {voice_resp.text}")
     except Exception as e:
-        print(f"⚠️ 發送語音發生例外（已忽略以防中斷流程）: {e}")
+        print(f"⚠️ 發送語音發生例外: {e}")
 
 
 # ==========================================
