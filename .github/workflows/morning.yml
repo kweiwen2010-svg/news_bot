@@ -19,7 +19,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install requests python-dotenv
+          pip install requests python-dotenv feedparser google-genai
 
       - name: Run Morning Briefing Script
         env:
